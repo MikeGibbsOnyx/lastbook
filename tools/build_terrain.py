@@ -127,10 +127,18 @@ def init():
 
 
 def main():
+    global SRC, OUT
     ap = argparse.ArgumentParser()
     ap.add_argument('--bbox', help='W,S,E,N limit (default: everything)')
     ap.add_argument('--workers', type=int, default=24)
+    ap.add_argument('--src', help='directory of nNNwNNN/*.tif cells (default: USGS tree)')
+    ap.add_argument('--out', help='output terrain.sqlite (default: derived/geo/terrain.sqlite)')
+    ap.add_argument('--source-label', default='USGS 3DEP 1 arc-second DEM (library-data/geography/usgs/Elevation/1)')
     a = ap.parse_args()
+    if a.src:
+        SRC = Path(a.src)
+    if a.out:
+        OUT = Path(a.out)
     init()
     keys = set()
     for top, left in CELLS:
@@ -184,7 +192,7 @@ def main():
             db.execute('INSERT OR REPLACE INTO tile VALUES (?,?,?,?)', (z, x, y, png(h)))
         level = nxt
     db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', ('built', time.strftime('%Y-%m-%dT%H:%M:%S')))
-    db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', ('source', 'USGS 3DEP 1 arc-second DEM (library-data/geography/usgs/Elevation/1)'))
+    db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', ('source', a.source_label))
     db.commit()
     print(f'done: {done} supertiles, {ntiles:,} tiles in {time.time() - t0:.0f}s', flush=True)
 
