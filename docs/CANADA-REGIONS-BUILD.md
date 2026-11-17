@@ -51,7 +51,8 @@ Codes use the ISO 3166-2 style proposed in REGIONS.md. `CA` alone is already Cal
 
 `packaging/merge_ca_sets.py` combines the province sets into `CA-Canada` with offset feature and
 place ids and a rebuilt place FTS index. `packaging/merge_ca_map.py` merges `CA-Canada` into a US
-LastbookData map set, carrying the US water/terrain/buildings/crops/address files forward.
+LastbookData map set, carrying the US water/terrain/buildings/crops files forward and appending
+Canadian addresses to the US address index.
 
 ## Addresses
 

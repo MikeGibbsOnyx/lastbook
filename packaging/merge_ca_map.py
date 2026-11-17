@@ -62,6 +62,26 @@ def merge_places(us_path, ca_path):
     return n
 
 
+def merge_addresses(us_path, ca_path):
+    if not ca_path.is_file():
+        return 0
+    if not us_path.is_file():
+        shutil.copy2(ca_path, us_path)
+        db = sqlite3.connect(f'file:{us_path}?mode=ro', uri=True)
+        n = db.execute('SELECT count(*) FROM addr').fetchone()[0]
+        db.close()
+        return n
+    db = sqlite3.connect(us_path)
+    db.execute('PRAGMA synchronous=OFF')
+    db.execute('ATTACH DATABASE ? AS ca', (str(ca_path),))
+    db.execute('INSERT INTO addr(num,street,norm,city,state,zip,lat,lon) SELECT num,street,norm,city,state,zip,lat,lon FROM ca.addr')
+    db.execute('CREATE INDEX IF NOT EXISTS addr_norm ON addr(norm, num)')
+    n = db.execute('SELECT count(*) FROM addr').fetchone()[0]
+    db.commit()
+    db.close()
+    return n
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--us', required=True, help='US LastbookData folder (or a folder holding derived/geo)')
@@ -101,6 +121,7 @@ def main():
 
     features = merge_national(out_geo / 'national.sqlite', ca_geo / 'national.sqlite')
     places = merge_places(out_geo / 'places.sqlite', ca_geo / 'places.sqlite')
+    addresses = merge_addresses(out_geo / 'addresses.sqlite', ca_geo / 'addresses.sqlite')
     (out_geo / 'national-status.json').write_text(json.dumps({'state': 'complete', 'stage': 'ready', 'features': features}), encoding='utf-8')
     if not (out_geo / 'socal-cells.json').exists():
         (out_geo / 'socal-cells.json').write_text('[]', encoding='utf-8')
@@ -110,12 +131,12 @@ def main():
         ms = json.loads((us / 'map-set.json').read_text(encoding='utf-8'))
     else:
         ms = {'name': 'merged', 'files': {}}
-    for rel in ('derived/geo/national.sqlite', 'derived/geo/places.sqlite', 'derived/geo/national-status.json', 'derived/geo/socal-cells.json'):
+    for rel in ('derived/geo/national.sqlite', 'derived/geo/places.sqlite', 'derived/geo/addresses.sqlite', 'derived/geo/national-status.json', 'derived/geo/socal-cells.json'):
         p = out / rel
         if p.is_file():
             ms['files'][rel] = p.stat().st_size
     (out / 'map-set.json').write_text(json.dumps(ms, indent=1), encoding='utf-8')
-    print(json.dumps({'features': features, 'places': places, 'map_set': str(out / 'map-set.json')}, indent=1))
+    print(json.dumps({'features': features, 'places': places, 'addresses': addresses, 'map_set': str(out / 'map-set.json')}, indent=1))
 
 
 if __name__ == '__main__':
