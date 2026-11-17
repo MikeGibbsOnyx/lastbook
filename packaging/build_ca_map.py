@@ -69,33 +69,40 @@ def main():
     geo.mkdir(parents=True, exist_ok=True)
 
     gpkg = Path(a.gpkg)
-    if gpkg.suffix == '.zip':
-        # build_map.py reads a GeoPackage, not the Geofabrik zip: unpack it beside the zip.
-        unpack = out / 'gpkg'
-        unpack.mkdir(parents=True, exist_ok=True)
-        target = unpack / f'{slug}.gpkg'
-        if not target.exists():
-            import zipfile as zf
-            with zf.ZipFile(gpkg) as z:
-                member = next(n for n in z.namelist() if n.endswith('.gpkg'))
-                with z.open(member) as src, open(target, 'wb') as dst:
-                    shutil.copyfileobj(src, dst, 1 << 24)
-        gpkg = target
+    if gpkg.suffix == '.pbf':
+        # Geofabrik has no free GeoPackage for BC/NU; build directly from the PBF.
+        builder = TOOLS / 'build_map_pbf.py'
+        source = f'OpenStreetMap contributors, via Geofabrik {slug}-latest.osm.pbf (ODbL 1.0)'
+    else:
+        if gpkg.suffix == '.zip':
+            # build_map.py reads a GeoPackage, not the Geofabrik zip: unpack it beside the zip.
+            unpack = out / 'gpkg'
+            unpack.mkdir(parents=True, exist_ok=True)
+            target = unpack / f'{slug}.gpkg'
+            if not target.exists():
+                import zipfile as zf
+                with zf.ZipFile(gpkg) as z:
+                    member = next(n for n in z.namelist() if n.endswith('.gpkg'))
+                    with z.open(member) as src, open(target, 'wb') as dst:
+                        shutil.copyfileobj(src, dst, 1 << 24)
+            gpkg = target
+        builder = TOOLS / 'build_map.py'
+        source = f'OpenStreetMap contributors, via Geofabrik {slug}-latest-free.gpkg.zip (ODbL 1.0)'
 
     data_as_of = datetime.datetime.fromtimestamp(os.path.getmtime(gpkg), datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-    source = f'OpenStreetMap contributors, via Geofabrik {slug}-latest-free.gpkg.zip (ODbL 1.0)'
     national = geo / 'national.sqlite'
 
     subprocess.run([
-        sys.executable, str(TOOLS / 'build_map.py'), str(gpkg), str(national),
-        '--source-label', source, '--bounds', bounds, '--data-as-of', data_as_of,
+        sys.executable, str(builder), str(gpkg), str(national),
+        '--source-label', source, f'--bounds={bounds}', '--data-as-of', data_as_of,
         *(['--skip-buildings'] if a.skip_buildings else []),
     ], check=True)
 
     if a.coast:
-        if not a.pbf:
+        pbf = a.pbf or (str(gpkg) if gpkg.suffix == '.pbf' else None)
+        if not pbf:
             sys.exit('--coast needs --pbf')
-        subprocess.run([sys.executable, str(TOOLS / 'build_coast.py'), str(a.pbf), str(national)], check=True)
+        subprocess.run([sys.executable, str(TOOLS / 'build_coast.py'), pbf, str(national)], check=True)
 
     subprocess.run([sys.executable, str(TOOLS / 'build_places_ca.py'), str(national), str(geo / 'places.sqlite'), name], check=True)
 
