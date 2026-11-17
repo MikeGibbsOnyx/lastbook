@@ -11,6 +11,7 @@ import argparse
 import json
 import shutil
 import sqlite3
+import time
 from pathlib import Path
 
 
@@ -37,13 +38,22 @@ def merge_national(us_path, ca_path):
     us_b, ca_b = bounds_of(db), None
     ca_db = sqlite3.connect(f'file:{ca_path}?mode=ro', uri=True)
     ca_b = bounds_of(ca_db)
+    ca_meta = dict(ca_db.execute('SELECT key,value FROM meta').fetchall())
     ca_db.close()
     if us_b and ca_b:
         merged = [min(us_b[0], ca_b[0]), min(us_b[1], ca_b[1]), max(us_b[2], ca_b[2]), max(us_b[3], ca_b[3])]
-        db.execute("UPDATE meta SET value=? WHERE key='bounds'", (','.join(f'{v:g}' for v in merged),))
+    elif ca_b:
+        merged = ca_b
+    else:
+        merged = None
+    if merged:
+        db.execute("INSERT OR REPLACE INTO meta VALUES ('bounds', ?)", (','.join(f'{v:g}' for v in merged),))
     features = db.execute('SELECT count(*) FROM feat').fetchone()[0]
-    db.execute("UPDATE meta SET value=? WHERE key='status'", (json.dumps({'state': 'complete', 'stage': 'ready', 'features': features}),))
-    db.execute("UPDATE meta SET value=? WHERE key='source'", ('OpenStreetMap contributors (ODbL 1.0); US and Canadian extracts via Geofabrik',))
+    db.execute("INSERT OR REPLACE INTO meta VALUES ('status', ?)", (json.dumps({'state': 'complete', 'stage': 'ready', 'features': features}),))
+    db.execute("INSERT OR REPLACE INTO meta VALUES ('source', ?)", ('OpenStreetMap contributors (ODbL 1.0); US and Canadian extracts via Geofabrik',))
+    if ca_meta.get('data_as_of'):
+        db.execute("INSERT OR REPLACE INTO meta VALUES ('data_as_of', ?)", (ca_meta['data_as_of'],))
+    db.execute("INSERT OR REPLACE INTO meta VALUES ('built', ?)", (time.strftime('%Y-%m-%dT%H:%M:%S'),))
     db.commit()
     db.close()
     return features
@@ -131,10 +141,9 @@ def main():
         ms = json.loads((us / 'map-set.json').read_text(encoding='utf-8'))
     else:
         ms = {'name': 'merged', 'files': {}}
-    for rel in ('derived/geo/national.sqlite', 'derived/geo/places.sqlite', 'derived/geo/addresses.sqlite', 'derived/geo/national-status.json', 'derived/geo/socal-cells.json'):
-        p = out / rel
+    for p in out_geo.iterdir():
         if p.is_file():
-            ms['files'][rel] = p.stat().st_size
+            ms['files'][f'derived/geo/{p.name}'] = p.stat().st_size
     (out / 'map-set.json').write_text(json.dumps(ms, indent=1), encoding='utf-8')
     print(json.dumps({'features': features, 'places': places, 'addresses': addresses, 'map_set': str(out / 'map-set.json')}, indent=1))
 
