@@ -11,10 +11,18 @@ the original archive is only read. Output tables:
   poi(id, cls, name, lon, lat)             help-relevant points (hospitals, pharmacies, water...)
   meta(key, value)
 """
-import math, sqlite3, struct, sys, time
+import argparse, math, sqlite3, struct, sys, time
 from array import array
 
-SRC, DST = sys.argv[1], sys.argv[2]
+_ap = argparse.ArgumentParser(description='Convert a Geofabrik free GeoPackage into a Lastbook map database.')
+_ap.add_argument('src')
+_ap.add_argument('dst')
+_ap.add_argument('--source-label', default='OpenStreetMap contributors, via Geofabrik socal-latest-free.gpkg.zip (ODbL 1.0)')
+_ap.add_argument('--bounds', default='-121.36,32.50,-114.10,35.89')
+_ap.add_argument('--data-as-of', default='2026-10-25T21:21:21Z')
+_ap.add_argument('--skip-buildings', action='store_true')
+_args = _ap.parse_args()
+SRC, DST = _args.src, _args.dst
 Q = 1e6
 
 ROAD_Z = {'motorway': 5, 'trunk': 6, 'motorway_link': 10, 'trunk_link': 10, 'primary': 8, 'primary_link': 12,
@@ -174,10 +182,11 @@ def main():
         add('road', cls, label, ROAD_Z.get(cls, 15), parts)
     print('roads', fid[0], round(time.time() - t0), flush=True)
     dst.commit()
-    for parts, (cls, name) in each('gis_osm_buildings_a_free'):
-        add('bldg', cls or '', None, 15, [simplify(parts[0], 0.000002)])
-    print('buildings', fid[0], round(time.time() - t0), flush=True)
-    dst.commit()
+    if not _args.skip_buildings:
+        for parts, (cls, name) in each('gis_osm_buildings_a_free'):
+            add('bldg', cls or '', None, 15, [simplify(parts[0], 0.000002)])
+        print('buildings', fid[0], round(time.time() - t0), flush=True)
+        dst.commit()
     for parts, (cls, pop, name) in each('gis_osm_places_free', 'fclass,population,name'):
         if name:
             z = PLACE_Z.get(cls, 14)
@@ -196,9 +205,9 @@ def main():
             dst.execute('INSERT INTO poi VALUES (?,?,?,?,?)', (pid, cls, name, (minx + maxx) / 2, (miny + maxy) / 2))
     dst.execute('CREATE INDEX poi_cls ON poi(cls, lon, lat)')
     dst.executemany('INSERT INTO meta VALUES (?,?)', [
-        ('source', 'OpenStreetMap contributors, via Geofabrik socal-latest-free.gpkg.zip (ODbL 1.0)'),
-        ('data_as_of', '2026-10-25T21:21:21Z'),
-        ('bounds', '-121.36,32.50,-114.10,35.89'),
+        ('source', _args.source_label),
+        ('data_as_of', _args.data_as_of),
+        ('bounds', _args.bounds),
         ('built', time.strftime('%Y-%m-%dT%H:%M:%S')),
     ])
     dst.commit()
